@@ -1,0 +1,13 @@
+MTWDIR := machinetalk/mtlauncher
+
+MTLAUNCHER_COMP_PY = mtlauncher
+
+$(patsubst %, ../bin/%, $(MTLAUNCHER_COMP_PY)) : ../bin/%: $(MTWDIR)/%.py
+	@$(ECHO) Syntax checking python script $(notdir $@)
+	$(Q)$(PYTHON) -c 'import sys; compile(open(sys.argv[1]).read(), sys.argv[1], "exec")' $<
+	$(ECHO) Copying python script $(notdir $@)
+	cp $< $@
+	chmod +x $@
+
+PYTARGETS += $(patsubst %, ../bin/%, $(MTLAUNCHER_COMP_PY))
+

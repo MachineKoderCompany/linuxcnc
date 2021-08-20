@@ -52,6 +52,13 @@ HALLIB_DIR=@HALLIB_DIR@; export HALLIB_DIR
 #HALLIB_PATH: see also -H option
 HALLIB_PATH=.:$HALLIB_DIR; export HALLIB_PATH
 
+# if not overridden by user, point MACHINETALK_INI to installed default:
+if [ -z "$MACHINETALK_INI" ]; then
+    MACHINETALK_INI=@EMC2_SYSTEM_CONFIG_DIR@/machinetalk.ini
+fi
+export MACHINETALK_INI
+
+
 # put ~.local/bin in PATH if missing. See:
 # https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=839155
 if [ -d $HOME/.local/bin ]; then

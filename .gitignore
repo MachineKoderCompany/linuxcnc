@@ -42,4 +42,7 @@ position.txt
 *.glade.h
 # Ignore test results
 *.result
-
+/etc/
+lib/python/machinetalk_lib/config.py
+src/machinetalkcfg.py-tmp
+scripts/machinetalk.ini.tmpl

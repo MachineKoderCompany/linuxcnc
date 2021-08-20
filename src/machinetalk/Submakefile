@@ -1,0 +1,5 @@
+../etc/linuxcnc/machinetalk.ini: machinetalk/machinetalk.ini
+	mkdir -p $(dir $@)
+	machinetalk/install-machinetalk_ini.sh $^ $@
+
+TARGETS += ../etc/linuxcnc/machinetalk.ini
