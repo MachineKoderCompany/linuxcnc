@@ -7,7 +7,7 @@ A plasma cutting table control component for use with the LinuxCNC V2.8 or later
 
 .I VERSION:
 .br
-0.212 - 2021 Aug 04
+0.212 - 2021 Aug 04 + KERFCROSS_TESTING_1 Aug 18
 
 .I SUMMARY:
 .br
@@ -60,7 +60,8 @@ pin in  float   height_per_volt             "torch height change per volt (machi
 pin in  bit     homed                       "machine is homed";
 pin in  bit     ignore_arc_ok_0             "don't require arc ok for start or cutting";
 pin in  bit     ignore_arc_ok_1             "don't require arc ok for start or cutting";
-pin in  s32     kerf_errors_max = 2         "allowable kerfcross threshold errors";
+pin in  s32     kerfcross_period = 2        "kerf cross sampling in thread cycles";
+pin in  s32     kerfcross_slope = 500       "kerfcross slope in volts per second";
 pin in  bit     kerfcross_enable            "enable kerf crossing [mode 0 & mode 1]";
 pin in  float   kerfcross_override          "kerf crossing threshold override as a percentage";
 pin in  float   lowpass_frequency           "lowpass cutoff frequency for arc voltage output";
@@ -194,9 +195,15 @@ variable bool   float_detected;             /* float switch detected */
 variable int    height_ovr_counts;          /* number of counts to change height via override */
 variable float  height_ovr_old;             /* old height override value */
 variable bool   initialized;                /* initialization flag */
-variable int    kerf_errors;                /* number of times kerfcross threshold exceeded */
-variable float  kerf_ratio;                 /* kerf crossing height to distance ratio */
-variable float  kerf_threshold;             /* kerf crossing threshold voltage */
+
+//variable float  kerfcross_change;           /* voltage change per kerfcross period */
+//variable int    kerfcross_count = 1;        /* current count of kerfcross cycles */
+//variable float  kerfcross_threshold;        /* kerf crossing threshold voltage */
+
+pin out float   kerfcross_change            "voltage change per kerfcross period";
+pin out s32     kerfcross_count = 1         "current count of kerfcross cycles";
+pin out float   kerfcross_threshold         "kerf crossing threshold voltage";
+
 variable float  last_arc_voltage;           /* last sensed arc voltage */
 variable bool   manual_cut;                 /* manual cut mode is active */
 variable int    offset_datum;               /* datum for safe height calcs */
@@ -1247,36 +1254,39 @@ FUNCTION(_) {
                             }else{
                                 cornerlock_is_locked = FALSE;
                             }
-                            /* unlock kerfcross lock if voltage reduced to safe level  */
-                            if(kerfcross_is_locked){
-//                                if(arc_voltage_out < last_arc_voltage + (kerf_threshold * 0.05)){
-//                                if(arc_voltage_out < target_volts + (kerf_threshold * 0.5)){
-                                if(arc_voltage_out <= target_volts + kerf_threshold){
-                                    kerfcross_is_locked = FALSE;
-                                    kerf_errors = 0;
-                                }
-                                last_arc_voltage = arc_voltage_out;
-                            /* set kerfcross lock if voltage change > kerfcross threshold volts */
-                            }else if(kerfcross_enable){
-                                if(thc_feed_rate < current_velocity * 60){
-                                    kerf_ratio = thc_feed_rate / (current_velocity * 60);
-                                }else{
-                                    kerf_ratio = 1; /* 45 degree ramp */
-                                }
-                                kerf_threshold = ((kerf_ratio * current_velocity * fperiod) / height_per_volt) * (kerfcross_override * 0.01);
-                                if(arc_voltage_out > last_arc_voltage + kerf_threshold){
-//                                if(arc_voltage_out > target_volts + kerf_threshold){
-                                    if(kerf_errors < kerf_errors_max){
-                                        kerf_errors += 1;
-                                    }
-                                    if(kerf_errors == kerf_errors_max){
-                                        kerfcross_is_locked = TRUE;
+
+
+
+// ********** KERFCROSS TESTING START **********
+                            if(kerfcross_enable){
+                                /* kerfross cycles must be at least 1 */
+                                if(kerfcross_period >= 1){
+                                    if(kerfcross_count >= kerfcross_period){
+                                        kerfcross_count = 1;
+                                        kerfcross_change = fabs(arc_voltage_out - last_arc_voltage);
+                                        kerfcross_threshold = (kerfcross_slope * kerfcross_period * fperiod) * (kerfcross_override * 0.01);
+                                        last_arc_voltage = arc_voltage_out;
+                                        if(kerfcross_change > kerfcross_threshold){
+                                            kerfcross_is_locked = TRUE;
+                                        }else if((arc_voltage_out <= target_volts + kerfcross_threshold) && (arc_voltage_out >= target_volts - kerfcross_threshold)){
+                                            kerfcross_is_locked = FALSE;
+                                        }
+                                    }else{
+                                        kerfcross_count += 1;
                                     }
                                 }else{
-                                    kerf_errors = 0;
+                                    rtapi_print_msg(RTAPI_MSG_ERR,"plasmac.kerfcross-period must be greater than zero.\n"
+                                                                  "void sensing is inhibited.\n");
                                 }
+                            }else{
+                                kerfcross_is_locked = FALSE;
+                                kerfcross_count = 1;
                                 last_arc_voltage = arc_voltage_out;
                             }
+// ********** KERFCROSS TESTING END **********
+
+
+
                             /* do thc if ok to go */
                             if(!cornerlock_is_locked && !kerfcross_is_locked){
                                 pid_error_now = (target_volts + height_override - arc_voltage_out) * 0.1;
