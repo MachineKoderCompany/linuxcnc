@@ -92,7 +92,6 @@ class Mtlauncher(object):
         launcher_dirs=None,
         host='',
         svc_uuid='',
-        debug=False,
         name=None,
         host_in_name=True,
         poll_interval=0.5,
@@ -107,7 +106,6 @@ class Mtlauncher(object):
         self.host = host
         self.loopback = loopback
         self.name = name
-        self.debug = debug
         self.shutdown = threading.Event()
         self.running = False
         self.poll_interval = poll_interval
@@ -236,10 +234,7 @@ class Mtlauncher(object):
     def _create_sockets(self, context):
         self.context = context
         base_uri = "tcp://"
-        if self.loopback:
-            base_uri += '127.0.0.1'
-        else:
-            base_uri += '*'
+        base_uri += '127.0.0.1' if self.loopback else '*'
         self.launcher_socket = context.socket(zmq.XPUB)
         self.launcher_socket.setsockopt(zmq.XPUB_VERBOSE, 1)
         self.launcher_port = self.launcher_socket.bind_to_random_port(base_uri)
@@ -282,7 +277,6 @@ class Mtlauncher(object):
             host=self.host,
             name=self.name,
             loopback=self.loopback,
-            debug=self.debug,
         )
         self.command_service = service.Service(
             type_='launchercmd',
@@ -291,7 +285,6 @@ class Mtlauncher(object):
             port=self.command_port,
             host=self.host,
             loopback=self.loopback,
-            debug=self.debug,
         )
 
     def _publish_services(self):
@@ -629,12 +622,9 @@ def main():
     debug = args.debug
 
     logging.basicConfig()
-    if debug:
-        logger.setLevel(logging.DEBUG)
-    else:
-        logger.setLevel(logging.INFO)
+    logging.getLogger().setLevel(logging.DEBUG if debug else logging.INFO)
 
-    uuid, remote = service.read_machinetalk_ini(debug=debug)
+    uuid, remote = service.read_machinetalk_ini()
 
     logger.debug("announcing mtlauncher")
 
@@ -652,7 +642,6 @@ def main():
         name=args.name,
         host_in_name=bool(args.suppress_ip),
         loopback=(not remote),
-        debug=debug,
     )
     mtlauncher.start()
 

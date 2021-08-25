@@ -1,3 +1,5 @@
+#ifdef HAVE_MACHINETALK
+
 MTWDIR := machinetalk/mtlauncher
 
 MTLAUNCHER_COMP_PY = mtlauncher
@@ -11,3 +13,5 @@ $(patsubst %, ../bin/%, $(MTLAUNCHER_COMP_PY)) : ../bin/%: $(MTWDIR)/%.py
 
 PYTARGETS += $(patsubst %, ../bin/%, $(MTLAUNCHER_COMP_PY))
 
+
+#endif # HAVE_MACHINETALK

@@ -1,25 +1,25 @@
 # this file specifies options which apply globally to several programs, and all services
 
 # having these options in one place avoids repeated ini file changes.
-# it sits at a well-known place ($HAL_HOME/etc/machinekit/machinekit.ini), thus
+# it sits at a well-known place ($HAL_HOME/etc/linuxcnc/machinetalk.ini), thus
 # is accessible to all programs.
 
-[MACHINEKIT]
+[MACHINETALK]
 
-# -------------- Unique UUID of a Machinekit instance  -----------------
-# All network-accessible services of a running Machinekit instance are
+# -------------- Unique UUID of a Machinetalk instance  -----------------
+# All network-accessible services of a running Machinetalk instance are
 # identified by a unique id; see 'man uuidgen'
 # Clients browsing zeroconf for services belonging to a particular instance
-# use this MKUUID value as a unique key.
+# use this MTUUID value as a unique key.
 #
-# All MKUUID's must be different, so if there are several Machinekit instances
+# All MTUUID's must be different, so if there are several Machinetalk instances
 # running on a LAN, there might be collisions hence this UUID should always differ
-# from the default in scripts/machinekit.ini.tmpl.
+# from the default in scripts/machinetalk.ini.tmpl.
 # You can alter it yourself with the output from uuidgen if required.
 #
-# Should you wish to retain the same MKUUID after repo cleans and rebuilds
+# Should you wish to retain the same MTUUID after repo cleans and rebuilds
 # keep a backup copy of the file and substitute it as required.
-MKUUID=a42c8c6b-4025-4f83-ba28-dad21114744a
+MTUUID=a42c8c6b-4025-4f83-ba28-dad21114744a
 
 # -------------- enabling remote operation -----------------
 

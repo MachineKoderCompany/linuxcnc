@@ -4,8 +4,11 @@ import dbus
 import os
 import sys
 import uuid
+import logging
 
 from six.moves.configparser import ConfigParser
+
+logger = logging.getLogger('service')
 
 
 class ZeroconfService(object):
@@ -126,12 +129,11 @@ class Service(object):
             str('service=' + self.type),
         ]
 
-        if self.debug:
-            print(
-                'service: dsname = {dsn} port = {port} txtrec = {txt} name = {name}'.format(
-                    dsn=self.dsn, port=self.port, txt=self.status_txtrec, name=self.name
-                )
+        logging.debug(
+            'dsname = {dsn} port = {port} txtrec = {txt} name = {name}'.format(
+                dsn=self.dsn, port=self.port, txt=self.status_txtrec, name=self.name
             )
+        )
 
         self.status_service = ZeroconfService(
             self.name,
@@ -149,7 +151,7 @@ class Service(object):
         self.status_service.unpublish()
 
 
-def read_machinetalk_ini(debug=False):
+def read_machinetalk_ini():
     mtini = os.getenv("MACHINETALK_INI")
     if mtini is None:
         from machinetalk_lib import config
@@ -165,12 +167,11 @@ def read_machinetalk_ini(debug=False):
     remote = mti.getint("MACHINETALK", "REMOTE")
 
     if remote == 0:
-        print(
+        logging.info(
             "Remote communication is deactivated, configserver will use the loopback interfaces"
         )
-        print("set REMOTE in " + mtini + " to 1 to enable remote communication")
+        logging.info("set REMOTE in " + mtini + " to 1 to enable remote communication")
 
-    if debug:
-        print('found MACHINETALK_INI {}'.format(mtini))
+    logging.debug('found MACHINETALK_INI {}'.format(mtini))
 
     return uuid_, remote
