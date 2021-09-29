@@ -136,6 +136,7 @@ class LinuxCNCWrapper(object):
                 self.error = ObjectLock(
                     linuxcnc.error_channel(), 'linuxcnc.error_channel', MAX_LOCK_TIME
                 )
+            self._is_joint_axis = hasattr(self.stat, 'joints')
 
             ini_file = ini_file or os.environ.get('INI_FILE_NAME', '/dev/null')
             self.ini = linuxcnc.ini(ini_file)
@@ -426,26 +427,23 @@ class LinuxCNCWrapper(object):
 
         with codecs.open(self.tool_table_path, 'w', encoding='utf-8') as f:
             for tool in tool_table:
-                line = (
-                    'T%d P%d D%f X%+f Y%+f Z%+f A%+f B%+f C%+f U%+f V%+f W%+f I%+f J%+f Q%d ;%s\n'
-                    % (
-                        tool.id,
-                        tool.pocket,
-                        tool.diameter,
-                        tool.offset.x,
-                        tool.offset.y,
-                        tool.offset.z,
-                        tool.offset.a,
-                        tool.offset.b,
-                        tool.offset.c,
-                        tool.offset.u,
-                        tool.offset.v,
-                        tool.offset.w,
-                        tool.frontangle,
-                        tool.backangle,
-                        tool.orientation,
-                        tool.comment,
-                    )
+                line = 'T%d P%d D%f X%+f Y%+f Z%+f A%+f B%+f C%+f U%+f V%+f W%+f I%+f J%+f Q%d ;%s\n' % (
+                    tool.id,
+                    tool.pocket,
+                    tool.diameter,
+                    tool.offset.x,
+                    tool.offset.y,
+                    tool.offset.z,
+                    tool.offset.a,
+                    tool.offset.b,
+                    tool.offset.c,
+                    tool.offset.u,
+                    tool.offset.v,
+                    tool.offset.w,
+                    tool.frontangle,
+                    tool.backangle,
+                    tool.orientation,
+                    tool.comment,
                 )
                 f.write(line)
 
@@ -635,6 +633,9 @@ class LinuxCNCWrapper(object):
             self.status.config.remote_path = ""
             self.status.config.time_units = TIME_UNITS_MINUTE
             self.status.config.name = ""
+            self.status.config.joints = 0
+            self.status.config.extrajoints = 0
+            self.status.config.spindles = 0
             self.config_first_run = False
 
             extensions = self.ini.findall("FILTER", "PROGRAM_EXTENSION")
@@ -772,6 +773,11 @@ class LinuxCNCWrapper(object):
         for name in ['axis_mask', 'debug', 'kinematics_type', 'axes']:
             modified |= self.update_config_value(name, getattr(stat, name))
 
+        if self._is_joint_axis:  # post joint-axis merge
+            for name in ['joints', 'spindles']:
+                modified |= self.update_config_value(name, getattr(stat, name))
+            modified |= self.update_config_value('extrajoints', stat.num_extrajoints)
+
         for name in ['cycle_time']:
             modified |= self.update_config_float(name, getattr(stat, name))
 
@@ -823,15 +829,22 @@ class LinuxCNCWrapper(object):
                 )
 
             axis = self.status.config.axis[index]
-            axis_modified |= self.update_proto_value(
-                axis, tx_axis, 'axis_type', stat_axis['axisType']
-            )
+            if not self._is_joint_axis:
+                axis_modified |= self.update_proto_value(
+                    axis, tx_axis, 'axis_type', stat_axis['axisType']
+                )
+
+                for name in [
+                    'backlash',
+                    'max_ferror',
+                    'min_ferror',
+                ]:
+                    axis_modified |= self.update_proto_float(
+                        axis, tx_axis, name, stat_axis[name]
+                    )
 
             for name in [
-                'backlash',
-                'max_ferror',
                 'max_position_limit',
-                'min_ferror',
                 'min_position_limit',
             ]:
                 axis_modified |= self.update_proto_float(
@@ -844,6 +857,49 @@ class LinuxCNCWrapper(object):
                 modified = True
 
         del tx_axis
+
+        if self._is_joint_axis:  # post joint-axis merge
+            tx_joint = EmcStatusConfigJoint()
+            for index, stat_joint in enumerate(stat.joint):
+                tx_joint.Clear()
+                joint_modified = False
+
+                if index == stat.joints:
+                    break
+
+                if len(self.status.config.joint) == index:
+                    self.status.config.joint.add()
+                    joint = self.status.config.joint[index]
+                    joint.index = index
+                    joint.joint_type = EMC_JOINT_LINEAR
+                    joint.backlash = 0.0
+                    joint.max_ferror = 0.0
+                    joint.max_position_limit = 0.0
+                    joint.min_ferror = 0.0
+                    joint.min_position_limit = 0.0
+
+                joint = self.status.config.joint[index]
+                joint_modified |= self.update_proto_value(
+                    joint, tx_joint, 'joint_type', stat_joint['jointType']
+                )
+
+                for name in [
+                    'backlash',
+                    'max_ferror',
+                    'max_position_limit',
+                    'min_ferror',
+                    'min_position_limit',
+                ]:
+                    joint_modified |= self.update_proto_float(
+                        joint, tx_joint, name, stat_joint[name]
+                    )
+
+                if joint_modified:
+                    tx_joint.index = index
+                    self.status_tx.config.joint.add().CopyFrom(tx_joint)
+                    modified = True
+
+            del tx_joint
 
         if self.config_full_update:
             self.add_pparams()
@@ -1129,11 +1185,6 @@ class LinuxCNCWrapper(object):
             'probing',
             'queue',
             'queue_full',
-            'spindle_brake',
-            'spindle_direction',
-            'spindle_enabled',
-            'spindle_increasing',
-            'spindle_override_enabled',
             'state',
         ]:
             modified |= self.update_motion_value(name, getattr(stat, name))
@@ -1145,8 +1196,6 @@ class LinuxCNCWrapper(object):
             'feedrate',
             'rapidrate',
             'rotation_xy',
-            'spindle_speed',
-            'spindlerate',
             'max_acceleration',
             'max_velocity',
         ]:
@@ -1165,6 +1214,19 @@ class LinuxCNCWrapper(object):
             modified |= self.update_proto_position(
                 self.status.motion, self.status_tx.motion, name, getattr(stat, name)
             )
+
+        if not self._is_joint_axis:
+            for name in [
+                'spindle_brake',
+                'spindle_direction',
+                'spindle_enabled',
+                'spindle_increasing',
+                'spindle_override_enabled',
+            ]:
+                modified |= self.update_motion_value(name, getattr(stat, name))
+
+            for name in ['spindle_speed', 'spindlerate']:
+                modified |= self.update_motion_float(name, getattr(stat, name))
 
         tx_obj_item = EmcStatusAnalogIO()
         obj = self.status.motion.ain
@@ -1234,38 +1296,154 @@ class LinuxCNCWrapper(object):
                 self.status.motion.axis[index].velocity = 0.0
 
             axis = self.status.motion.axis[index]
-            for name in [
-                'enabled',
-                'fault',
-                'homed',
-                'homing',
-                'inpos',
-                'max_hard_limit',
-                'max_soft_limit',
-                'min_hard_limit',
-                'min_soft_limit',
-                'override_limits',
-            ]:
-                axis_modified |= self.update_proto_value(
-                    axis, tx_axis, name, stat_axis[name]
-                )
+            if not self._is_joint_axis:
+                for name in [
+                    'enabled',
+                    'fault',
+                    'homed',
+                    'homing',
+                    'inpos',
+                    'max_hard_limit',
+                    'max_soft_limit',
+                    'min_hard_limit',
+                    'min_soft_limit',
+                    'override_limits',
+                ]:
+                    axis_modified |= self.update_proto_value(
+                        axis, tx_axis, name, stat_axis[name]
+                    )
 
-            for name in [
-                'ferror_current',
-                'ferror_highmark',
-                'input',
-                'output',
-                'velocity',
-            ]:
-                axis_modified |= self.update_proto_float(
-                    axis, tx_axis, name, stat_axis[name]
-                )
+                    for name in [
+                        'ferror_current',
+                        'ferror_highmark',
+                        'input',
+                        'output',
+                    ]:
+                        axis_modified |= self.update_proto_float(
+                            axis, tx_axis, name, stat_axis[name]
+                        )
+
+            axis_modified |= self.update_proto_float(
+                axis, tx_axis, 'velocity', stat_axis['velocity']
+            )
 
             if axis_modified:
                 tx_axis.index = index
                 self.status_tx.motion.axis.add().CopyFrom(tx_axis)
                 modified = True
         del tx_axis
+
+        if self._is_joint_axis:  # post joint-axis merge
+            tx_joint = EmcStatusMotionJoint()
+            for index, stat_joint in enumerate(stat.joint):
+                tx_joint.Clear()
+                joint_modified = False
+
+                if index == stat.joints:
+                    break
+
+                if len(self.status.motion.joint) == index:
+                    self.status.motion.joint.add()
+                    joint = self.status.motion.joint[index]
+                    joint.index = index
+                    joint.enabled = False
+                    joint.fault = False
+                    joint.ferror_current = 0.0
+                    joint.ferror_highmark = 0.0
+                    joint.homed = False
+                    joint.homing = False
+                    joint.inpos = False
+                    joint.input = 0.0
+                    joint.max_hard_limit = False
+                    joint.max_soft_limit = False
+                    joint.min_hard_limit = False
+                    joint.min_soft_limit = False
+                    joint.output = 0.0
+                    joint.override_limits = False
+                    joint.velocity = 0.0
+
+                joint = self.status.motion.joint[index]
+                for name in [
+                    'enabled',
+                    'fault',
+                    'homed',
+                    'homing',
+                    'inpos',
+                    'max_hard_limit',
+                    'max_soft_limit',
+                    'min_hard_limit',
+                    'min_soft_limit',
+                    'override_limits',
+                ]:
+                    joint_modified |= self.update_proto_value(
+                        joint, tx_joint, name, stat_joint[name]
+                    )
+
+                for name in [
+                    'ferror_current',
+                    'ferror_highmark',
+                    'input',
+                    'output',
+                    'velocity',
+                ]:
+                    joint_modified |= self.update_proto_float(
+                        joint, tx_joint, name, stat_joint[name]
+                    )
+
+                if joint_modified:
+                    tx_joint.index = index
+                    self.status_tx.motion.joint.add().CopyFrom(tx_joint)
+                    modified |= True
+            del tx_joint
+
+        if self._is_joint_axis:
+            tx_spindle = EmcStatusMotionSpindle()
+            for index, stat_spindle in enumerate(stat.spindle):
+                tx_spindle.Clear()
+                spindle_modified = False
+
+                if index == stat.spindles:
+                    break
+
+                if len(self.status.motion.spindle) == index:
+                    self.status.motion.spindle.add()
+                    spindle = self.status.motion.spindle[index]
+                    spindle.index = index
+                    spindle.brake = False
+                    spindle.direction = 0
+                    spindle.enabled = False
+                    spindle.override_enabled = False
+                    spindle.speed = 0.0
+                    spindle.homed = False
+                    spindle.orient_fault = False
+                    spindle.orient_state = False
+                    spindle.increasing = False
+                    spindle.override = 0.0
+
+                spindle = self.status.motion.spindle[index]
+                for name in [
+                    'brake',
+                    'direction',
+                    'enabled',
+                    'override_enabled',
+                    'homed',
+                    'orient_fault',
+                    'orient_state',
+                ]:
+                    spindle_modified |= self.update_proto_value(
+                        spindle, tx_spindle, name, stat_spindle[name]
+                    )
+
+                for name in ['speed', 'override']:
+                    spindle_modified |= self.update_proto_float(
+                        spindle, tx_spindle, name, stat_spindle[name]
+                    )
+
+                if spindle_modified:
+                    tx_spindle.index = index
+                    self.status_tx.motion.spindle.add().CopyFrom(tx_spindle)
+                    modified |= True
+            del tx_spindle
 
         if self.motion_full_update:
             self.add_pparams()
@@ -1546,10 +1724,8 @@ class LinuxCNCWrapper(object):
 
             logger.debug("process status called {} {}".format(subscription, status))
             logger.debug(
-                    "status service subscribed: {}".format(
-                        self.status_service_subscribed
-                    )
-                )
+                "status service subscribed: {}".format(self.status_service_subscribed)
+            )
 
         except zmq.ZMQError as e:
             logger.error('ZMQ error: {}'.format(e))
@@ -1577,8 +1753,8 @@ class LinuxCNCWrapper(object):
 
             logger.debug("process error called {} {}".format(subscription, status))
             logger.debug(
-                    "error service subscribed: {}".format(self.error_service_subscribed)
-                )
+                "error service subscribed: {}".format(self.error_service_subscribed)
+            )
 
         except zmq.ZMQError as e:
             logger.error('ZMQ error: {}'.format(e))
@@ -1623,8 +1799,8 @@ class LinuxCNCWrapper(object):
         self.send_command_executed(identity, ticket)
 
         logger.debug(
-                'waiting for command #{} from {} to complete'.format(ticket, identity)
-            )
+            'waiting for command #{} from {} to complete'.format(ticket, identity)
+        )
 
         # kick off the monitoring thread
         threading.Thread(
@@ -1777,7 +1953,14 @@ class LinuxCNCWrapper(object):
                     'emc_command_params'
                 ) and self.rx.emc_command_params.HasField('index'):
                     axis = self.rx.emc_command_params.index
-                    self.command.jog(linuxcnc.JOG_STOP, axis)
+                    if self._is_joint_axis:
+                        if self.rx.emc_command_params.HasField('enable'):
+                            jjogmode = self.rx.emc_command_params.enable
+                        else:
+                            jjogmode = False
+                        self.command.jog(linuxcnc.JOG_STOP, jjogmode, axis)
+                    else:
+                        self.command.jog(linuxcnc.JOG_STOP, axis)
                     if self.rx.HasField('ticket'):
                         self.wait_complete(identity, self.rx.ticket)
                 else:
@@ -1791,7 +1974,14 @@ class LinuxCNCWrapper(object):
                 ):
                     axis = self.rx.emc_command_params.index
                     velocity = self.rx.emc_command_params.velocity
-                    self.command.jog(linuxcnc.JOG_CONTINUOUS, axis, velocity)
+                    if self._is_joint_axis:
+                        if self.rx.emc_command_params.HasField('enable'):
+                            jjogmode = self.rx.emc_command_params.enable
+                        else:
+                            jjogmode = False
+                        self.command.jog(linuxcnc.JOG_CONTINUOUS, jjogmode, axis, velocity)
+                    else:
+                        self.command.jog(linuxcnc.JOG_CONTINUOUS, axis, velocity)
                     if self.rx.HasField('ticket'):
                         self.wait_complete(identity, self.rx.ticket)
                 else:
@@ -1807,7 +1997,14 @@ class LinuxCNCWrapper(object):
                     axis = self.rx.emc_command_params.index
                     velocity = self.rx.emc_command_params.velocity
                     distance = self.rx.emc_command_params.distance
-                    self.command.jog(linuxcnc.JOG_INCREMENT, axis, velocity, distance)
+                    if self._is_joint_axis:
+                        if self.rx.emc_command_params.HasField('enable'):
+                            jjogmode = self.rx.emc_command_params.enable
+                        else:
+                            jjogmode = False
+                        self.command.jog(linuxcnc.JOG_INCREMENT, jjogmode, axis, velocity, distance)
+                    else:
+                        self.command.jog(linuxcnc.JOG_INCREMENT, axis, velocity, distance)
                     if self.rx.HasField('ticket'):
                         self.wait_complete(identity, self.rx.ticket)
                 else:
