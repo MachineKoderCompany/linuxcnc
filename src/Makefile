@@ -136,6 +136,7 @@ GENERATED_MANPAGES :=
 SUBDIRS := \
     machinetalk \
     machinetalk/config-service \
+    machinetalk/file-service \
     machinetalk/mtwrapper \
     machinetalk/mtlauncher \
     \
@@ -793,6 +794,7 @@ install-python: install-dirs
 	$(EXE) ../bin/scorbot-er-3 $(DESTDIR)$(bindir)
 	$(EXE) $(patsubst %.py,../bin/%,$(VISMACH_PY)) $(DESTDIR)$(bindir)
 	$(EXE) ../bin/configserver $(DESTDIR)$(bindir)
+	$(EXE) ../bin/fileserver $(DESTDIR)$(bindir)
 	$(EXE) ../bin/mtlauncher $(DESTDIR)$(bindir)
 	$(FILE) ../share/linuxcnc/linuxcnc-wizard.gif $(DESTDIR)$(prefix)/share/linuxcnc
 	$(FILE) emc/usr_intf/axis/etc/axis_light_background $(DESTDIR)$(docsdir)
