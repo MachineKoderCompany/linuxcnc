@@ -126,12 +126,8 @@ class FileServiceBase(object):
     # process all messages received on file2
     def _file2_channel_message_received(self, identity, rx):
 
-        # react to ping message
-        if rx.type == pb.MT_PING:
-            self.ping_received(identity, rx)
-
         # react to file get message
-        elif rx.type == pb.MT_FILE_GET:
+        if rx.type == pb.MT_FILE_GET:
             self.file_get_received(identity, rx)
 
         # react to file put message
@@ -153,9 +149,6 @@ class FileServiceBase(object):
         for cb in self.on_file2_message_received:
             cb(identity, rx)
 
-    def ping_received(self, identity, rx):
-        print('SLOT ping unimplemented')
-
     def file_get_received(self, identity, rx):
         print('SLOT file get unimplemented')
 
@@ -173,11 +166,6 @@ class FileServiceBase(object):
 
     def send_file2_message(self, identity, msg_type, tx):
         self._file2_channel.send_socket_message(identity, msg_type, tx)
-
-    def send_ping_acknowledge(self, identity, tx):
-        ids = [identity]
-        for receiver in ids:
-            self.send_file2_message(receiver, pb.MT_PING_ACKNOWLEDGE, tx)
 
     def send_file_data(self, identity, tx):
         ids = [identity]

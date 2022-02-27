@@ -36,6 +36,7 @@ class RpcService(object):
         self._socket_port_event = threading.Event()   # sync event for port
         self._socket_dsn = ''
         self._socket_dsn_event = threading.Event()   # sync event for dsn
+        self._last_socket_identity = ''
         # more efficient to reuse protobuf messages
         self._socket_rx = Container()
         self._socket_tx = Container()
@@ -167,6 +168,7 @@ class RpcService(object):
         frames = socket.recv_multipart()
         identity = frames[:-1]
         msg = frames[-1]
+        self._last_socket_identity = identity
 
         try:
             self._socket_rx.ParseFromString(msg)
@@ -203,6 +205,6 @@ class RpcService(object):
 
     def send_ping_acknowledge(self):
         tx = self._socket_tx
-        ids = self._socket_topics
+        ids = [self._last_socket_identity]
         for receiver in ids:
             self.send_socket_message(receiver, pb.MT_PING_ACKNOWLEDGE, tx)
