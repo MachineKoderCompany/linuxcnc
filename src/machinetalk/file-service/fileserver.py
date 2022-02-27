@@ -67,7 +67,10 @@ class FileService(FileServiceBase):
 
         file_item = rx.file_service_data.files[0]
         file_name = file_item.name
-        pathname = os.path.join(self.path, file_name)
+        if not file_name.startswith(self.path):
+            pathname = os.path.join(self.path, file_name)
+        else:
+            pathname = file_name
 
         if not os.path.exists(pathname) or os.path.isdir(pathname):
             self._send_error_message(identity, 'file not found: %s' % pathname)
@@ -127,7 +130,7 @@ class FileService(FileServiceBase):
         for entry in sorted(files):
             file_item = self.tx.file_service_data.files.add()
             filepath = os.path.join(pathname, entry)
-            file_item.name = os.path.join(file_path, entry)
+            file_item.name = entry
             statinfo = os.stat(filepath)
             mode = statinfo.st_mode
             file_item.is_dir = S_ISDIR(mode)
